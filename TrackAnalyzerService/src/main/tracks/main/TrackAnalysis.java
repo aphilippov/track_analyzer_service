@@ -26,23 +26,37 @@ import tracks.types.*;
 
 public class TrackAnalysis {
 
-	public static boolean ASC = true;
-	public static boolean DESC = false;
+	static boolean ASC = true;
+	static boolean DESC = false;
+	static int[] visitCountZones;
+	static double[] lastTrackInZone;
+	static HashMap<Zone, int[]> visitCount;
 
-	//the main method.
-	//analyzes the given csv file and returns the Map of zones with corresponding percentages
-	//of total visitors that visited the zone
-	public static Map<Zone,Float> CalculatePercentages(String inputDate, float filterTime,
-			String filterType) throws SQLException {
-		
-		//processing the input
+	// the main method.
+	// analyzes the given csv file and returns the Map of zones with
+	// corresponding percentages
+	// of total visitors that visited the zone
+	public static Map<Zone, Float> CalculatePercentages(String inputDate,
+			float filterTime, String filterType) throws SQLException {
+
+		// processing the input
 		Date filterDate = parseInputDate(inputDate);
 
-		//reading the data file
-		final CSV csv = CSV.create();		
+		// reading the data file
+		final CSV csv = CSV.create();
 		String dataFile = DataFile.getDataFile();
 		CSVReader reader = csv.reader(dataFile);
 		String[] line = new String[4];
+
+		// the parsing parameters
+		double trackID = 0;
+		String trackType = "";
+		Date trackBegin = new Date();
+		Date trackEnd = new Date();
+		ArrayList<ZoneVisit> zoneVisits;
+
+		// total number of tracks in the file
+		int totalVisitors = 0;
 
 		// reading the first line with headers
 		// do nothing
@@ -61,18 +75,22 @@ public class TrackAnalysis {
 		// LastVisitor is a temporary value of the last processed track counted
 		// for this zone
 		// in order to avoid counting the same track for the zone twice or more
-		HashMap<Zone, int[]> visitCount = new HashMap<Zone, int[]>();
 
-		//the parsing parameters
-		double trackID = 0;
-		String trackType = "";
-		Date trackBegin = new Date();
-		Date trackEnd = new Date();
-		ArrayList<ZoneVisit> zoneVisits;
-		
-		//total number of tracks in the file
-		int totalVisitors = 0;
+		// try and read the zones file
+		ArrayList<Zone> zonesList = new ArrayList<Zone>();
+		zonesList = readZonesFile(csv);
+		boolean zonesPresent = false;
+		if (zonesList != null) {
+			// zones are present
+			// do stuff
+			int numberZones = getMaxZoneID(zonesList)+1;
+			visitCountZones = new int[numberZones];
+			lastTrackInZone = new double[numberZones];
+			zonesPresent = true;
+		}
 
+		// else:
+		visitCount = new HashMap<Zone, int[]>();
 		try {
 			while ((line = reader.readNext()) != null) {
 				if (line.length == 5) {
@@ -91,10 +109,16 @@ public class TrackAnalysis {
 							"The .CSV file provided is not of the right format");
 				}
 
-				//analyze the current track and add it's information to the visitCount
-				visitCount = processSingleTrack(visitCount, zoneVisits, trackID,
-						trackType, trackBegin, trackEnd, filterType,
-						filterDate, filterTime);
+				// analyze the current track and add it's information to the
+				// visitCount
+				if (zonesPresent)
+					processSingleTrackZones(zoneVisits, trackID, trackType,
+							trackBegin, trackEnd, filterType, filterDate,
+							filterTime);
+				else
+					processSingleTrack(zoneVisits, trackID, trackType,
+							trackBegin, trackEnd, filterType, filterDate,
+							filterTime);
 
 				totalVisitors++;
 			}
@@ -103,52 +127,135 @@ public class TrackAnalysis {
 			e.printStackTrace();
 		}
 
-		//sort the collection
-		LinkedHashMap<Zone, int[]> sortedVisits = sortVisitsMap(visitCount,
-				DESC);
+		LinkedHashMap<Zone, Float> percentZones;
 
-		//calculate the percentages
-		LinkedHashMap<Zone, Float> percentZones = calculatePecentage(
-				sortedVisits, totalVisitors);
-		
+		if (zonesPresent) {
+			HashMap<Zone, Integer> zonesVisitsMap = new HashMap<Zone, Integer>();
+			for (Zone zone : zonesList) {
+				zonesVisitsMap.put(zone, visitCountZones[zone.getZoneID()]);
+			}
+			// sort the collection
+			LinkedHashMap<Zone, Integer> sortedZonesVisits = sortVisitZonesMap(
+					zonesVisitsMap, DESC);
+			// calculate the percentages
+			percentZones = calculateZonesPecentage(sortedZonesVisits,
+					totalVisitors);
+
+		} else {
+			// sort the collection
+			LinkedHashMap<Zone, int[]> sortedVisits = sortVisitsMap(visitCount,
+					DESC);
+			// calculate the percentages
+			percentZones = calculatePecentage(sortedVisits, totalVisitors);
+		}
+
 		return percentZones;
 	}
 
-	//parse the String parameter to the Date object
-	private static Date parseInputDate(String inputDate) {
-	      if (inputDate == null)
-	    	  return null;
-	    		  
-		
-		  SimpleDateFormat ft = new SimpleDateFormat ("yyyy-MM-dd"); 
-	      ft.setLenient(false);
+	// returns the greatest ID of all the zones
+	private static int getMaxZoneID(ArrayList<Zone> zonesList) {
+		int maxID = 0;
+		for (Zone zone : zonesList) {
+			if (zone.getZoneID() > maxID)
+				maxID = zone.getZoneID();
+		}
+		return maxID;
+	}
 
-	      Date newDate = null;
-	      
-	      try { 
-	          newDate = ft.parse(inputDate); 
-	      } catch (ParseException e) {
-	    	  e.printStackTrace();
-	      }
-	     
+	private static void processSingleTrackZones(
+			ArrayList<ZoneVisit> zoneVisits, double trackID, String trackType,
+			Date trackBegin, Date trackEnd, String filterType, Date filterDate,
+			float filterTime) {
+		// if filter is present, but the track does not satisfy it,
+		// skip the track
+		if ((filterType != null) && (!filterType.equals(trackType)))
+			return;
+		else if ((filterDate != null) && (!isSameDay(filterDate, trackBegin)))
+			return;
+		else {
+			// counting zones in a single track based on the time filter
+			for (int i = 0; i < zoneVisits.size(); i++) {
+				ZoneVisit visit = zoneVisits.get(i);
+				if (visit.getDuration() >= filterTime) {
+
+					short zoneID = visit.getZoneID();
+					if (lastTrackInZone[zoneID] != trackID) {
+						visitCountZones[zoneID]++;
+						lastTrackInZone[zoneID] = trackID;
+					}
+
+				}
+			}
+		}
+	}
+
+	private static ArrayList<Zone> readZonesFile(CSV csv) {
+		String zonesFile = DataFile.getZonesFile();
+		CSVReader zonesReader = csv.reader(zonesFile);
+		String[] zoneLine = new String[2];
+		boolean zonesPresent = true;
+
+		try {
+			zoneLine = zonesReader.readNext();
+		} catch (IOException e1) {
+			zonesPresent = false;
+		}
+
+		ArrayList<Zone> zonesList = new ArrayList<Zone>();
+
+		if (zonesPresent) {
+			try {
+				while ((zoneLine = zonesReader.readNext()) != null) {
+					zonesList.add(new Zone(Short.parseShort(zoneLine[0]),
+							zoneLine[1]));
+				}
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			// if the zones file is present, but empty -> return null
+			if (zonesList.isEmpty())
+				return null;
+			else
+				return zonesList;
+
+		} else
+			return null;
+	}
+
+	// parse the String parameter to the Date object
+	private static Date parseInputDate(String inputDate) {
+		if (inputDate == null)
+			return null;
+
+		SimpleDateFormat ft = new SimpleDateFormat("yyyy-MM-dd");
+		ft.setLenient(false);
+
+		Date newDate = null;
+
+		try {
+			newDate = ft.parse(inputDate);
+		} catch (ParseException e) {
+			e.printStackTrace();
+		}
+
 		return newDate;
 	}
 
-	//analyzes a single track and counts the zone visits
-	//based on the filters
-	private static HashMap<Zone, int[]> processSingleTrack(
-			HashMap<Zone, int[]> hashMap, ArrayList<ZoneVisit> zoneVisits,
-			double trackID, String trackType, Date trackBegin,
-			Date trackEnd, String filterType, Date filterDate,
+	// analyzes a single track and counts the zone visits
+	// based on the filters
+	private static void processSingleTrack(
+			ArrayList<ZoneVisit> zoneVisits, double trackID, String trackType,
+			Date trackBegin, Date trackEnd, String filterType, Date filterDate,
 			float filterTime) {
 
 		// if filter is present, but the track does not satisfy it,
 		// skip the track
 		if ((filterType != null) && (!filterType.equals(trackType)))
-			return hashMap;
+			return;
 		else if ((filterDate != null) && (!isSameDay(filterDate, trackBegin)))
-			return hashMap;
-		else {		
+			return;
+		else {
 			// counting zones in a single track based on the time filter
 			for (int i = 0; i < zoneVisits.size(); i++) {
 				ZoneVisit visit = zoneVisits.get(i);
@@ -156,11 +263,11 @@ public class TrackAnalysis {
 
 					Zone keyZone = new Zone(visit.getZoneID(),
 							visit.getZoneName());
-					if (hashMap.containsKey(keyZone)) {
+					if (visitCount.containsKey(keyZone)) {
 						// the zone is already in the list
 						// check if this track is already counted or not
 
-						int[] countZone = hashMap.get(keyZone);
+						int[] countZone = visitCount.get(keyZone);
 
 						// if we haven't counted this track yet for this zone,
 						// increase the counter and note the last counted track
@@ -172,33 +279,34 @@ public class TrackAnalysis {
 						}
 					} else {
 						// this is a new zone, add it to the list count
-						hashMap.put(keyZone, new int[] { 1, (int) trackID });
+						visitCount.put(keyZone, new int[] { 1, (int) trackID });
 					}
 				}
 			}
-			return hashMap;
+			return;
 		}
 	}
 
-	//checks if the two dates are the same day
+	// checks if the two dates are the same day
 	private static boolean isSameDay(Date date1, Date date2) {
-		
-		if ((date1 == null ) || (date2 == null)){
+
+		if ((date1 == null) || (date2 == null)) {
 			throw new NullPointerException("the date is null");
 		}
-		
-		 Calendar cal1 = Calendar.getInstance();
-		 Calendar cal2 = Calendar.getInstance();
-		 cal1.setTime(date1);
-		 cal2.setTime(date2);
-		 boolean sameDay = cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR)
-		 &&
-		 cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR);
-		
-		 return sameDay;
+
+		Calendar cal1 = Calendar.getInstance();
+		Calendar cal2 = Calendar.getInstance();
+		cal1.setTime(date1);
+		cal2.setTime(date2);
+		boolean sameDay = cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR)
+				&& cal1.get(Calendar.DAY_OF_YEAR) == cal2
+						.get(Calendar.DAY_OF_YEAR);
+
+		return sameDay;
 	}
 
-	//transforms the Map with zone visits in the Map with percentage of total visits
+	// transforms the Map with zone visits in the Map with percentage of total
+	// visits
 	private static LinkedHashMap<Zone, Float> calculatePecentage(
 			Map<Zone, int[]> sortedVisits, int totalVisitors) {
 
@@ -212,7 +320,22 @@ public class TrackAnalysis {
 		return returnMap;
 	}
 
-	//sorts the Map<Zone,int[]> of number of visits in zones
+	// transforms the Map with zone visits in the Map with percentage of total
+	// visits
+	private static LinkedHashMap<Zone, Float> calculateZonesPecentage(
+			Map<Zone, Integer> sortedVisits, int totalVisitors) {
+
+		LinkedHashMap<Zone, Float> returnMap = new LinkedHashMap<Zone, Float>(
+				sortedVisits.size());
+		for (Zone z : sortedVisits.keySet()) {
+			Float percentage = (float) sortedVisits.get(z) * 100
+					/ totalVisitors;
+			returnMap.put(z, percentage);
+		}
+		return returnMap;
+	}
+
+	// sorts the Map<Zone,int[]> of number of visits in zones
 	private static LinkedHashMap<Zone, int[]> sortVisitsMap(
 			HashMap<Zone, int[]> unsortedMap, boolean sortAsc) {
 
@@ -230,8 +353,27 @@ public class TrackAnalysis {
 		}
 		return sortedMap;
 	}
-	
-	//used to sort the main collection Map<Zone,int[]> in ascending order of %
+
+	// sorts the Map<Zone,Integer> of number of visits in zones
+	private static LinkedHashMap<Zone, Integer> sortVisitZonesMap(
+			HashMap<Zone, Integer> unsortedMap, boolean sortAsc) {
+
+		List<Entry<Zone, Integer>> list = new LinkedList<Entry<Zone, Integer>>(
+				unsortedMap.entrySet());
+
+		if (sortAsc)
+			Collections.sort(list, new VisitZonesComparatorAsc());
+		else
+			Collections.sort(list, new VisitZonesComparatorDesc());
+
+		LinkedHashMap<Zone, Integer> sortedMap = new LinkedHashMap<Zone, Integer>();
+		for (Entry<Zone, Integer> entry : list) {
+			sortedMap.put(entry.getKey(), entry.getValue());
+		}
+		return sortedMap;
+	}
+
+	// used to sort the main collection Map<Zone,int[]> in ascending order of %
 	static class VisitsComparatorAsc implements Comparator<Entry<Zone, int[]>> {
 		@Override
 		public int compare(Entry<Zone, int[]> entry1, Entry<Zone, int[]> entry2) {
@@ -240,7 +382,7 @@ public class TrackAnalysis {
 		}
 	}
 
-	//used to sort the main collection Map<Zone,int[]> in descending order of %
+	// used to sort the main collection Map<Zone,int[]> in descending order of %
 	static class VisitsComparatorDesc implements Comparator<Entry<Zone, int[]>> {
 		@Override
 		public int compare(Entry<Zone, int[]> entry1, Entry<Zone, int[]> entry2) {
@@ -248,26 +390,47 @@ public class TrackAnalysis {
 		}
 	}
 
+	// used to sort the main collection Map<Zone,Integer> in ascending order of
+	// %
+	static class VisitZonesComparatorAsc implements
+			Comparator<Entry<Zone, Integer>> {
+		@Override
+		public int compare(Entry<Zone, Integer> entry1,
+				Entry<Zone, Integer> entry2) {
+			return entry1.getValue() - entry2.getValue();
+			// return 0;
+		}
+	}
+
+	// used to sort the main collection Map<Zone,Integer> in descending order of
+	// %
+	static class VisitZonesComparatorDesc implements
+			Comparator<Entry<Zone, Integer>> {
+		@Override
+		public int compare(Entry<Zone, Integer> entry1,
+				Entry<Zone, Integer> entry2) {
+			return entry2.getValue() - entry1.getValue();
+		}
+	}
 
 	// converts unix time to the Date
 	private static Date convertToDate(String string) {
 		return new Date(Long.parseLong(string));
 	}
-	
 
-	//parse the String of zone visits of a single track in the array
+	// parse the String of zone visits of a single track in the array
 	private static ArrayList<ZoneVisit> parseZoneVisits(String zoneVisit) {
 
 		String[] zoneVisitList = zoneVisit.split("\\|");
 
-		//the array of zone visits
+		// the array of zone visits
 		ArrayList<ZoneVisit> zoneVisits = new ArrayList<ZoneVisit>();
 
-		//creating the parsing pattern
+		// creating the parsing pattern
 		String re1 = "(\\d+)"; // Integer Number 1
-		String re2 = "\\("; // 
-		String re3 = "(.*?)"; // 
-		String re4 = ";"; // 
+		String re2 = "\\("; //
+		String re3 = "(.*?)"; //
+		String re4 = ";"; //
 		String re5 = "([+-]?\\d*\\.\\d+)(?![-+0-9\\.])"; // Float 1
 		String re6 = "\\)"; // Any Single Character 3
 
@@ -275,11 +438,11 @@ public class TrackAnalysis {
 
 		Pattern p = Pattern.compile(re, Pattern.CASE_INSENSITIVE
 				| Pattern.DOTALL);
-		
-		//parsing the first zone visit
+
+		// parsing the first zone visit
 		String line0 = zoneVisitList[0];
 		Matcher m = p.matcher(line0);
-		
+
 		if (m.find()) {
 			String int1 = m.group(1);
 			String c1 = m.group(2);
@@ -289,8 +452,9 @@ public class TrackAnalysis {
 			zoneVisits.add(new ZoneVisit(shrt, c1, fl));
 		}
 
-		//parsing all the other zone visits
-		//if two consecutive visits were in the same zone, unite them and sum the time 
+		// parsing all the other zone visits
+		// if two consecutive visits were in the same zone, unite them and sum
+		// the time
 		for (int i = 1; i < zoneVisitList.length; i++) {
 			m = p.matcher(zoneVisitList[i]);
 			if (m.find()) {
@@ -310,6 +474,5 @@ public class TrackAnalysis {
 
 		return zoneVisits;
 	}
-
 
 }
