@@ -7,4 +7,8 @@ public class DataFile {
 	public static String getDataFile(){
 		return file;
 	}
+	
+	public static void setDataFile(String newFile){
+		file = newFile;
+	}
 }
