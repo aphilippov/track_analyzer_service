@@ -6,6 +6,7 @@ import java.sql.SQLException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
@@ -127,9 +128,12 @@ public class TrackAnalysis {
 			e.printStackTrace();
 		}
 
-		LinkedHashMap<Zone, Float> percentZones;
+		LinkedHashMap<Zone, Float> percentZones = new LinkedHashMap<Zone,Float>();
 
 		if (zonesPresent) {
+			if (Arrays.equals(visitCountZones, new int[visitCountZones.length]))
+					return percentZones;
+					
 			HashMap<Zone, Integer> zonesVisitsMap = new HashMap<Zone, Integer>();
 			for (Zone zone : zonesList) {
 				zonesVisitsMap.put(zone, visitCountZones[zone.getZoneID()]);
