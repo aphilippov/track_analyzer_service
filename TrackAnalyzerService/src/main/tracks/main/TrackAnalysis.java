@@ -195,6 +195,8 @@ public class TrackAnalysis {
 
 	private static ArrayList<Zone> readZonesFile(CSV csv) {
 		String zonesFile = DataFile.getZonesFile();
+		if (zonesFile == null)
+			return null;
 		CSVReader zonesReader = csv.reader(zonesFile);
 		String[] zoneLine = new String[2];
 		boolean zonesPresent = true;

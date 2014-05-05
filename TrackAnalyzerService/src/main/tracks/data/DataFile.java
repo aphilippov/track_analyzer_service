@@ -4,6 +4,7 @@ public class DataFile {
 	//the location of the .csv file
 	private static String file="/Users/anton/Downloads/tracks.csv";
 	private static String zones="/Users/anton/Downloads/zones.csv";
+	//private static String zones=null;
 	
 	public static String getDataFile(){
 		return file;
