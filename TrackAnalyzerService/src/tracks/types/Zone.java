@@ -3,9 +3,8 @@ package tracks.types;
 import javax.xml.bind.annotation.*;
 import javax.xml.bind.annotation.XmlRootElement;
 
-//@XmlRootElement
-//@XmlAccessorType(XmlAccessType.FIELD)
-//@XmlRootElement()
+
+@XmlAccessorType(XmlAccessType.FIELD)
 public class Zone {
 	@XmlElement
 	private short zoneID;
